@@ -8,7 +8,7 @@ This project demonstrates the end-to-end process of ingesting, parsing, and dete
 
 The attack scenario spans a complete kill chain: a spear-phishing email delivering a malicious macro, credential attacks including pass-the-hash, lateral movement via WMI and PsExec, persistence via scheduled task and registry modification, and culminating in ransomware execution (ShadowCrypt).
 
-**Main objective:** Build a functioning detection pipeline in Splunk that identifies each stage of a multi-phase cyberattack using structured log data, scheduled alerts, and security content mapped to MITRE ATT&CK — without relying on pre-labelled event descriptions.
+**Main objective:** Build a functioning detection pipeline in Splunk that identifies each stage of a multi-phase cyberattack using structured log data, scheduled alerts.
 
 ---
 
@@ -30,7 +30,7 @@ Splunk is used at **every phase of the IR lifecycle**:
 | Preparation | Onboarding data sources, building detection rules |
 | Detection | Scheduled alerts and correlation searches fire on anomalies |
 | Analysis | SPL queries pivot across indexes to reconstruct attack timeline |
-| Containment | Identifying scope — which hosts, users, IPs are affected |
+| Containment | Identifying scope (which hosts, users, IPs are affected) |
 | Eradication | Confirming malicious artefacts are no longer present in logs |
 | Recovery | Monitoring for re-infection or persistence mechanisms |
 | Lessons Learned | Refining detection rules based on what was missed |
@@ -127,11 +127,11 @@ Each file was assigned a distinct sourcetype and routed to its own index. Timest
 
 **Set Source Type — advanced settings configured for JSON parsing:**
 
-![Set Source Type](ingest_auth_set_source.jpg)
+![Set Source Type](images/ingest_auth_set_source.jpg)
 
 **Input Settings — host field value and index assignment:**
 
-![Input Settings](input_settings.jpeg)
+![Input Settings](images/index_Auth.jpg)
 
 #### Step 2 — Verify Ingestion
 ```spl
@@ -140,7 +140,7 @@ index=auth_logs OR index=email_logs OR index=endpoint_logs
 ```
 Confirmed 68 total events across all three indexes.
 
-![Total events across all three indexes](total_events.jpg)
+![Total events across all three indexes](images/total_events.jpg)
 
 #### Step 3 — Build Detection Rules
 
@@ -156,7 +156,7 @@ severity IN ("HIGH", "WARNING")
 | table source_ip, destination_ip, count, detection
 ```
 
-![Credential Attack detection search result — 192.168.1.10 flagged with count of 3](credential_attack_search.png)
+![Credential Attack detection search result — 192.168.1.10 flagged with count of 3](images/query_for_alert.png)
 
 **Detection 2 — High Severity Endpoint Activity**
 ```spl
@@ -192,22 +192,6 @@ index=auth_logs
 | table source_ip, targets, detection
 ```
 
-**Detection 5 — Kill Chain Severity Progression**
-```spl
-index=auth_logs OR index=email_logs OR index=endpoint_logs
-| eval stage=case(
-    index="email_logs",                           "1 - Email",
-    index="auth_logs" AND severity="WARNING",     "2 - Auth Warning",
-    index="auth_logs" AND severity="HIGH",        "3 - Auth High",
-    index="endpoint_logs" AND severity="HIGH",    "4 - Endpoint High",
-    index="endpoint_logs" AND severity="CRITICAL","5 - Critical Impact"
-)
-| where isnotnull(stage)
-| stats dc(stage) as stages_seen values(stage) as progression by source_ip
-| where stages_seen >= 3
-| eval detection="Multi-Stage Attack Progression"
-| table source_ip, stages_seen, progression, detection
-```
 
 #### Step 4 — Save as Scheduled Alerts
 
@@ -224,19 +208,15 @@ DETECTION FIRED: $result.detection$ - Source IP: $result.source_ip$ - Destinatio
 
 **Saving a search as an alert via Save As → Alert:**
 
-![Save As Alert menu](save_as_alert_menu.png)
+![Save As Alert menu](images/save_query_to_alert.png)
 
 **Alert settings — scheduled, cron expression, time range, trigger conditions:**
 
-![Alert settings configuration](alert_settings.png)
+![Alert settings configuration](images/First_Save_Alert.png)
 
 **Log Event action — token variables, sourcetype, host, index:**
 
-![Log Event trigger action configuration](alert_log_event.png)
-
-**Three alerts configured and enabled:**
-
-![Alerts list showing three enabled scheduled alerts](alerts_list.png)
+![Log Event trigger action configuration](images/Second_Save_Alert.png)
 
 #### Step 5 — CIM Mapping for SSE
 The three data models were configured in **Settings → Data Models** with direct constraints:
@@ -286,17 +266,9 @@ All five scheduled alerts fired successfully, visible in `index=main sourcetype=
 - **DETECT - Lateral Movement** — `192.168.1.10` authenticated to 3+ unique destination hosts
 - **DETECT - Kill Chain Progression** — `192.168.1.10` triggered 4 of 5 severity escalation stages
 
-**Individual alert fired event showing full token variable output:**
-
-![Single fired alert event with token variables resolved](alert_fired_event.png)
-
-**Alerts firing every 5 minutes — 303 total alert events logged to index=main:**
-
-![303 fired alert events in index=main](303_fired_alerts.png)
-
 **Alert events visible in index=main showing all three detection types firing:**
 
-![Fired alerts in Splunk showing detection events](fired_alerts.jpg)
+![Fired alerts in Splunk showing detection events](images/Fired_alerts.jpg)
 
 ### MITRE ATT&CK Coverage
 
