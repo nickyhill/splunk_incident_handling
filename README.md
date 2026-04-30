@@ -4,7 +4,7 @@
 
 ## 1. Project Overview
 
-This project demonstrates the end-to-end process of ingesting, parsing, and detecting security incidents using **Splunk Enterprise** and **Splunk Security Essentials (SSE)**. Using three simulated log files representing a real-world attack chain against a fictional organisation (Apex Financial), the project covers the full pipeline from raw log ingestion through to scheduled detection alerts mapped to the MITRE ATT&CK framework.
+This project demonstrates the end-to-end process of ingesting, parsing, and detecting security incidents using **Splunk Enterprise** and **Splunk Security Essentials (SSE)**. Using three simulated log files representing a real-world attack chain against a fictional organisation (Apex Financial), the project covers the full pipeline from raw log ingestion through to scheduled detection alerts and showing the potential of SSE.
 
 The attack scenario spans a complete kill chain: a spear-phishing email delivering a malicious macro, credential attacks including pass-the-hash, lateral movement via WMI and PsExec, persistence via scheduled task and registry modification, and culminating in ransomware execution (ShadowCrypt).
 
@@ -16,7 +16,7 @@ The attack scenario spans a complete kill chain: a spear-phishing email deliveri
 
 ### Why Splunk in Incident Response?
 
-Splunk is one of the most widely deployed SIEM (Security Information and Event Management) platforms in enterprise security operations. During an incident, Splunk serves as the central log aggregation and analysis engine — allowing analysts to:
+Splunk is one of the most widely deployed SIEM (Security Information and Event Management) platforms in enterprise security operations. During an incident, Splunk serves as the central log aggregation and analysis engine, which allows analysts to:
 
 - **Correlate events** across multiple data sources (authentication, endpoint, email, network) in a single search
 - **Detect attack patterns** through scheduled searches and correlation rules that fire when suspicious conditions are met
@@ -29,9 +29,9 @@ Splunk is used at **every phase of the IR lifecycle**:
 |---|---|
 | Preparation | Onboarding data sources, building detection rules |
 | Detection | Scheduled alerts and correlation searches fire on anomalies |
-| Analysis | SPL queries pivot across indexes to reconstruct attack timeline |
+| Analysis | SPL queries pivot across indexes to reconstruct attack timeline. Mapping to MITRE. |
 | Containment | Identifying scope (which hosts, users, IPs are affected) |
-| Eradication | Confirming malicious artefacts are no longer present in logs |
+| Eradication | Confirming malicious artifacts are no longer present in logs |
 | Recovery | Monitoring for re-infection or persistence mechanisms |
 | Lessons Learned | Refining detection rules based on what was missed |
 
@@ -40,7 +40,7 @@ Splunk is used at **every phase of the IR lifecycle**:
 Working through this project develops practical skills in:
 - Splunk architecture — indexes, sourcetypes, forwarders, props.conf
 - SPL (Search Processing Language) — stats, eval, join, where, table
-- CIM (Common Information Model) — normalising data for cross-source correlation
+- CIM (Common Information Model) — normalising data for cross-source correlation (used by SSE)
 - Detection engineering — writing rules based on behavioural indicators rather than signatures
 - MITRE ATT&CK mapping — linking detections to real-world adversary techniques
 - Splunk Security Essentials — navigating a production security content library
@@ -100,8 +100,7 @@ Custom Detection Rules (SPL Saved Searches → Scheduled Alerts)
   ├── Credential Attack Detection
   ├── High Severity Endpoint Activity
   ├── Phishing-to-Auth Escalation (cross-index join)
-  ├── Lateral Movement (dc of destination IPs)
-  └── Kill Chain Severity Progression
+  └── Lateral Movement (dc of destination IPs)
         │
         ▼
 Triggered Alerts → index=main (sourcetype=school:alerts)
@@ -117,8 +116,7 @@ Splunk Security Essentials
 Each log file was uploaded via **Settings → Add Data → Upload**. During the Set Source Type stage the following advanced settings were configured manually:
 
 ```ini
-INDEXED_EXTRACTION = json
-KV_MODE = none
+KV_MODE = json
 SHOULD_LINEMERGE = false
 LINE_BREAKER = ([\r\n]+)
 ```
@@ -167,7 +165,7 @@ severity IN ("CRITICAL", "HIGH")
     severity="CRITICAL", "Critical Endpoint Threat",
     severity="HIGH", "High Severity Endpoint Event"
 )
-| table _time, source_ip, severity, detection
+| table source_ip, severity, detection
 ```
 
 **Detection 3 — Phishing-to-Auth Escalation (cross-index)**
@@ -185,11 +183,12 @@ index=email_logs
 
 **Detection 4 — Lateral Movement**
 ```spl
-index=auth_logs
-| stats dc(destination_ip) as targets by source_ip
-| where targets >= 3
+index=endpoint_logs
+severity IN ("HIGH", "CRITICAL")
+| where destination_ip != "N/A"
+| stats count as tool_count, values(event_description) as activity, values(destination_ip) as destination by source_ip
 | eval detection="Potential Lateral Movement"
-| table source_ip, targets, detection
+| table source_ip, destination, tool_count, activity, detection
 ```
 
 
@@ -232,7 +231,7 @@ Splunk Security Essentials is a free app available on Splunkbase that extends Sp
 
 SSE was installed from a `.tar.gz` package via **Apps → Manage Apps → Install app from file**. After restart, the Splunk CIM Add-on was installed and custom products were manually added in **Data → Data Inventory** for each of the three data sources.
 
-However, the free trial combined with this log setup makes it difficult to get a realistic example of SSE working end to end. The majority of SSE's most relevant detections require either Splunk Enterprise Security (the paid premium product) or data that conforms strictly to Splunk's Common Information Model via properly tagged sourcetypes and accelerated data models. Custom JSON logs uploaded manually — as used in this lab — lack the CIM-normalised fields that SSE detections expect, meaning most searches either return no results or fall back to demo data rather than firing against the actual indexed events.
+However, the free trial combined with this log setup makes it difficult to get a realistic example of SSE working end to end. The majority of SSE's most relevant detections require either Splunk Enterprise Security (the paid premium product) or data that conforms strictly to Splunk's Common Information Model via properly tagged sourcetypes and accelerated data models. Custom JSON logs uploaded manually, as used in this lab, lack the CIM-normalised fields that SSE detections expect, meaning most searches either return no results or fall back to demo data rather than firing against the actual indexed events.
 
 ---
 
@@ -270,19 +269,6 @@ All five scheduled alerts fired successfully, visible in `index=main sourcetype=
 
 ![Fired alerts in Splunk showing detection events](images/Fired_alerts.jpg)
 
-### MITRE ATT&CK Coverage
-
-| Tactic | Technique | Detected |
-|---|---|---|
-| Initial Access | T1566 - Phishing | ✅ |
-| Execution | T1059 - Command & Scripting | ✅ |
-| Credential Access | T1550.002 - Pass the Hash | ✅ |
-| Credential Access | T1110 - Brute Force | ✅ |
-| Lateral Movement | T1047 - WMI | ✅ |
-| Lateral Movement | T1569 - PsExec | ✅ |
-| Persistence | T1053 - Scheduled Task | ✅ |
-| Persistence | T1547 - Registry Run Keys | ✅ |
-| Impact | T1486 - Data Encrypted for Impact | ✅ |
 
 ### Key Finding
 
@@ -296,9 +282,9 @@ The primary threat actor IP `192.168.1.10` appeared across all three log sources
 
 **Detection engineering without signatures is possible and more robust.** The most important lesson from this project was rewriting detection rules to avoid pattern matching on `event_description` — a field that wouldn't exist in real raw logs. By building detections on `severity`, `source_ip`, `dc(destination_ip)`, and cross-index joins, the rules became vendor-agnostic and would function on any normalised log source.
 
-**CIM normalisation is the prerequisite for everything.** SSE, data models, and any Splunk security app all depend on data being mapped to CIM. Getting data into an index is only half the job — normalising it to a common schema is what makes it actionable across tools.
+**CIM normalisation is the prerequisite for everything.** SSE, data models, and any Splunk security app all depend on data being mapped to CIM. Getting data into an index is only half the job, normalising it to a common schema is what makes it actionable across tools.
 
-**Static log files require special handling.** Because the incident logs had fixed timestamps from March 2025, scheduled alerts needed to be set to "All time" rather than a rolling window. In a live environment with a Universal Forwarder streaming events in real time, this wouldn't be an issue — but it's an important consideration when building detection labs from historical data.
+**Static log files require special handling.** Because the incident logs had fixed timestamps from March 2025, scheduled alerts needed to be set to "All time" rather than a rolling window. In a live environment with a Universal Forwarder streaming events in real time, this wouldn't be an issue, but it's an important consideration when building detection labs from historical data.
 
 **The kill chain is visible in the data when you know where to look.** Without any threat intelligence or prior knowledge, the multi-stage attack progression from phishing to ransomware was fully reconstructable from three log files using basic SPL. The attacker's primary IP (`192.168.1.10`) appeared in every stage, and the time-ordered sequence of severity escalations told the complete story.
 
@@ -314,9 +300,7 @@ The primary threat actor IP `192.168.1.10` appeared across all three log sources
 - **Add a Universal Forwarder** to stream live log data rather than static uploads, making scheduled alerts function with rolling time windows
 - **Implement Sysmon** as the endpoint log source to replace the simulated `event_description` field with real Windows telemetry (EventIDs, process trees, command lines)
 - **Build a detection dashboard** consolidating all five alert feeds into a single incident timeline view
-- **Expand to network logs** — adding firewall or DNS data would enable detection of C2 communication and data exfiltration stages not covered by the current three sources
+- **Expand to network logs** adding firewall or DNS data would enable detection of C2 communication and data exfiltration stages not covered by the current three sources
 - **Upgrade to Splunk Enterprise Security** to access the full correlation search framework, risk-based alerting, and Notable Events workflow used in production SOC environments
 
 ---
-
-*Project completed April 2026 | Splunk Enterprise Trial | Splunk Security Essentials 3.8*
