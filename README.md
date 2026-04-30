@@ -267,6 +267,9 @@ All five scheduled alerts fired successfully, visible in `index=main sourcetype=
 
 **Alert events visible in index=main showing all three detection types firing:**
 
+![Count of all Alerts Fired](images/total_alerts.jpg)
+
+
 ![Fired alerts in Splunk showing detection events](images/Fired_alerts.jpg)
 
 
